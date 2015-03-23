@@ -1,0 +1,215 @@
+library("stringr")
+setwd("C:/Users/sdd/Desktop/R/testtest")
+yangj=read.csv("lelever22.csv",header=T,stringsAsFactors=F)
+#使用holt-winter
+###########################################################################
+#holt winter addictive
+num1=nrow(yangj)
+num2=round(num1/5)
+train_set=yangj[1:(num1-num2),]
+test_set=yangj[(num1-num2+1):num1,]
+stats_train=ts(train_set[,2],frequency=96,start=c(16040,1))
+stats_test=ts(test_set[,2],frequency=96,start=c(16063, 20))
+plot(decompose(stats_train))
+
+summary(lm(loadss~t)) ##detrend:长期趋势不显著
+
+M1<-HoltWinters(stats_train,seasonal=c("additive"))
+plot(M1)
+p12=predict(M1,557,TRUE)
+plot(M1,p12)
+plot(fitted(M1))
+a=fitted(M1)
+ts.plot(stats_train, p12,col=1:2)
+lines(stats_test, col="blue", lty="dashed")
+
+rmse=mean((p12-stats_test)^2)/mean((stats_test-mean(stats_test))^2)
+
+M1
+plot(M1)
+summary(M1)
+fit=M1$fitted
+train_new=stats_train[97:2226]
+
+#deholt_winters filtering
+train=train_new-fit
+test=stats_test-p12
+lili=0
+length(train)
+length(test)
+lili[1:2130]=train[1:2130]
+lili[2131:2687]=test[1:557]
+plot(lili)
+tu=ts(lili,frequency=96,start=c(16060, 81))
+plot(tu)
+vec_holt=yangj[-c(1:96),]
+vec_holt$holt_re=lili
+#write.csv(vec_holt,file="C:/Users/hwj/Desktop/testtest/vec_holt.csv")
+##################SVM
+install.packages("e1071")
+library(e1071)
+set.seed(444)
+
+#确定最优滞后阶数
+
+lm_svm=function(data1,lags=5)
+{
+  rows=nrow(data1)
+  cols=ncol(data1)
+  rdat=data1[-(1:lags),]
+  for(i in 1:lags){
+    rdat=cbind(rdat,data1[i:(rows-lags+i-1),1])
+  }
+  colnames(rdat)[(cols+1):(cols+lags)]=paste("x",1:lags,sep="")
+  num1=rows-lags
+  num2=round(num1/5)
+  train=rdat[1:(num1-num2),]
+  test=rdat[(num1-num2+1):num1,]
+  t=1:nrow(train)
+  model_lm=lm(train[,2]~t+I(t^2)+I(t^3)+I(t^4)+I(t^5)+I(t^6)+sin(2*pi*t)+cos(2*pi*t))
+  train[,1]=model_lm$residuals
+  model_svm=svm(load~.,train,kernel="radial")
+  pre=predict(model_svm,test)+predict(model_lm,data.frame(t=(num1-num2+1):num1))
+  err=sqrt(mean(((pre-test[,2])/test[,2])^2))
+  return(err)
+}
+
+re=NULL
+for(i in 1:100)
+{
+  re=append(re,lm_svm(vec_holt,lags=i))
+}
+which.min(re)
+#lag=22
+
+#确定最优滞后阶数
+lm_svm=function(data,lags=5)
+{
+  rows=nrow(data)
+  cols=ncol(data)
+  rdat=data[-(1:lags),]
+  for(i in 1:lags){
+    rdat=cbind(rdat,data[i:(rows-lags+i-1),1])
+  }
+  colnames(rdat)[(cols+1):(cols+lags)]=paste("x",1:lags,sep="")
+  num1=rows-lags
+  num2=round(num1/5)
+  train=rdat[1:(num1-num2),]
+  test=rdat[(num1-num2+1):num1,]
+  model=svm(train[,1]~.,train,kernel="radial")
+  pre=predict(model,test)
+  err=sqrt(mean(((pre-test[,1])/test[,1])^2))
+  return(err)
+}
+
+re=NULL
+for(i in 1:200)
+{
+  re=append(re,lm_svm(vec_holt,lags=i))
+}
+which.min(re)
+#lag=98
+
+
+holtsvm<-read.table("C:/Users/sdd/Desktop/R/testtest/vec_holt.csv",dec=".",sep=",",header=T)
+
+cols=ncol(holtsvm)
+rows=nrow(holtsvm)
+
+holtsvm[,1]
+lags=193 #利用前lags-1个时间点预测第lags个时间点
+holtvec=holtsvm[-(1:(lags-1)),]
+for(i in 1:(lags-1))
+{
+  holtvec=cbind(holtvec,holtsvm[i:(rows-lags+i),9])
+}
+holtvec[,9]
+colnames(holtvec)[10:201]=paste("x",1:(lags-1),sep="")
+holtvec[,1]
+holtvec_svm=holtvec[,-1]
+
+#write.csv(holtvec_svm,file="C:/Users/hwj/Desktop/testtest/holtvec_svm.csv")
+#holtvec<-read.table("C:/Users/hwj/Desktop/testtest/holtvec.csv",dec=".",sep=",",header=T)
+num1=nrow(holtvec_svm)
+num2=round(num1/5)
+train_set=holtvec_svm[1:(num1-num2),]
+test_set=holtvec_svm[(num1-num2+1):num1,]
+
+#加入因素的支持向量机回归
+library(e1071)
+set.seed(444)
+model_svm=svm(train_set[,8]~.,train_set,kernel="radial")
+pre1=predict(model_svm,train_set)
+pre2=predict(model_svm,test_set)
+rms1=sqrt(mean((pre1-train_set[,8])^2))
+rms2=sqrt(mean((pre2-test_set[,8])^2))
+rmse1=mean((pre1-train_set[,8])^2)/mean((train_set[,8]-mean(train_set[,8]))^2)
+rmse2=mean((pre2-test_set[,8])^2)/mean((test_set[,8]-mean(test_set[,8]))^2)
+ms1=mean((pre1-train_set[,8])/train_set[,8])^2
+ms2=mean((pre2-test_set[,8])/test_set[,8])^2
+mape1=(sum(((abs(pre1-train_set[,8])))/train_set[,8]))/2150
+mape2=(sum(((abs(pre2-test_set[,8])))/test_set[,8]))/538
+rms1;rms2;rmse1;rmse2;ms1;ms2;mape1;mape2
+erreur1=(abs(pre1-train_set[,8]))/train_set[,8]
+which.max(erreur1)
+plot(erreur1)
+erreur2=(abs(pre2-test_set[,8]))/test_set[,8]
+plot(erreur2)
+max(erreur2)
+Box.test(erreur1)
+which.max(erreur2)
+
+
+#未加因素的支持向量机回归
+library(e1071)
+set.seed(444)
+head(train_set[,8])
+model_svm=svm(train_set[,8]~.,train_set[,-c(1:7)],kernel="radial")
+pre1=predict(model_svm,train_set[,-c(1:7)])
+pre2=predict(model_svm,test_set[,-c(1:7)])
+rms1=sqrt(mean((pre1-train_set[,8])^2))
+rms2=sqrt(mean((pre2-test_set[,8])^2))
+rmse1=mean((pre1-train_set[,8])^2)/mean((train_set[,8]-mean(train_set[,8]))^2)
+rmse2=mean((pre2-test_set[,8])^2)/mean((test_set[,8]-mean(test_set[,8]))^2)
+ms1=mean((pre1-train_set[,8])/train_set[,8])^2
+ms2=mean((pre2-test_set[,8])/test_set[,8])^2
+mape1=(sum(((abs(pre1-train_set[,8])))/train_set[,8]))/2150
+mape2=(sum(((abs(pre2-test_set[,8])))/test_set[,8]))/2150
+rms1;rms2;rmse1;rmse2;ms1;ms2;mape1;mape2
+erreur1=(abs(pre1-train_set[,8]))/train_set[,8]
+max(erreur1)
+plot(erreur1)
+erreur2=(abs(pre2-test_set[,8]))/test_set[,8]
+plot(erreur2)
+max(erreur2)
+Box.test(erreur2)
+
+
+
+
+#加入因素的支持向量机回归
+library(e1071)
+set.seed(444)
+model_svm=svm(train_set[,8]~.,train_set,kernel="radial")
+pre1=predict(model_svm,train_set)
+pre2=predict(model_svm,test_set)
+write.csv(pre2,file="C:/Users/sdd/Desktop/R/testtest/pre2.csv")
+write.csv(test_set[,8],file="C:/Users/sdd/Desktop/R/testtest/outsample.csv")
+write.csv(pre1,file="C:/Users/sdd/Desktop/R/testtest/pre1.csv")
+write.csv(train_set[,8],file="C:/Users/sdd/Desktop/R/testtest/insample.csv")
+
+rms1=sqrt(mean((pre1-train_set[,8])^2))
+
+rms1;rms2;rmse1;rmse2;ms1;ms2;mape1;mape2
+erreur1=(abs(pre1-train_set[,8]))/train_set[,8]
+which.max(erreur1)
+plot(erreur1)
+erreur2=(abs(pre2-test_set[,8]))/test_set[,8]
+plot(erreur2)
+max(erreur2)
+Box.test(erreur1)
+which.max(erreur2)
+#write.csv(erreur1,file="C:/Users/hwj/Desktop/testtest/erreur1.csv")
+#write.csv(erreur2,file="C:/Users/hwj/Desktop/testtest/erreur2.csv")
+?
+
